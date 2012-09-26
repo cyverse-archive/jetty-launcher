@@ -7,7 +7,10 @@ import java.io.File;
 import java.net.BindException;
 import org.eclipse.jetty.server.AbstractConnector;
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.handler.RequestLogHandler;
 import org.eclipse.jetty.util.log.Log;
+import org.eclipse.jetty.webapp.WebAppContext;
+import org.iplantc.gwt.jetty.ConnectorFactory.ConnectorFactoryBuilder;
 
 /**
  * A {@link ServletContainerLauncher} implementation that launches a Jetty 8.1.7 servlet container. Most of this code
@@ -61,6 +64,16 @@ public class JettyLauncher extends ServletContainerLauncher {
         }
     }
 
+    /*
+     * TODO: This is a hack to pass the base log level to the SCL. We'll have to
+     * figure out a better way to do this for SCLs in general.
+     */
+    public TreeLogger.Type getBaseLogLevel() {
+        synchronized (privateInstanceLock) {
+            return this.baseLogLevel;
+        }
+    }
+
     /**
      * @param bindAddress the address to listen to for incoming connections.
      */
@@ -86,7 +99,27 @@ public class JettyLauncher extends ServletContainerLauncher {
         LeakPreventor.jreLeakPrevention(logger);
         disableXmlValidation();
         Server server = createServer(logger, bindAddress, port);
+        WebAppContext wac = new WebAppContextWithReload(logger, appRootDir.getAbsolutePath(), "/");
+        configureServerLogging(logger, server, wac);
+        server.start();
+        server.setStopAtShutdown(true);
+        Log.setLog(new JettyTreeLogger(logger));
+        // TODO: implement JettyServletContainer and instantiate it here.
         return null;
+    }
+
+    /**
+     * Configures logging for the server.
+     *
+     * @param logger the logger to use.
+     * @param server the web server.
+     * @param wac the web application context.
+     */
+    private void configureServerLogging(TreeLogger logger, Server server, WebAppContext wac) {
+        RequestLogHandler logHandler = new RequestLogHandler();
+        logHandler.setRequestLog(new JettyRequestLogger(logger, getBaseLogLevel()));
+        logHandler.setHandler(wac);
+        server.setHandler(logHandler);
     }
 
     /**
@@ -99,6 +132,19 @@ public class JettyLauncher extends ServletContainerLauncher {
      */
     private Server createServer(TreeLogger logger, String bindAddress, int port) {
         Server server = new Server();
+        AbstractConnector connector = new ConnectorFactoryBuilder()
+                .setUseSsl(useSsl)
+                .setClientAuth(clientAuth)
+                .setKeystorePath(keystore)
+                .setKeystorePassword(keystorePassword)
+                .build()
+                .getConnector(logger);
+        if (bindAddress != null) {
+            connector.setHost(bindAddress);
+        }
+        connector.setReuseAddress(false);
+        connector.setSoLingerTime(0);
+        server.addConnector(connector);
         return server;
     }
 
