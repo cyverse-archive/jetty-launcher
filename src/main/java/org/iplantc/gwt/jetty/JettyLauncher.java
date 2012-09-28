@@ -7,6 +7,7 @@ import com.google.gwt.dev.util.Util;
 import java.io.File;
 import java.net.BindException;
 import java.net.URL;
+import java.net.URLClassLoader;
 import java.util.HashMap;
 import java.util.Map;
 import org.eclipse.jetty.server.AbstractConnector;
@@ -28,7 +29,7 @@ public class JettyLauncher extends ServletContainerLauncher {
 
         // Make JDT the default Ant compiler so that JSP compilation just works.  If we don't wet this, it's
         // difficult to make JSP compiltion work.
-        String antJavaC = System.getProperty("build.compiler.org.eclipse.jdt.core.JDTCompilerAdapter");
+        String antJavaC = System.getProperty("build.compiler", "org.eclipse.jdt.core.JDTCompilerAdapter");
         System.setProperty("build.compiler", antJavaC);
     }
 
@@ -255,6 +256,7 @@ public class JettyLauncher extends ServletContainerLauncher {
      */
     @Override
     public ServletContainer start(TreeLogger logger, int port, File appRootDir) throws BindException, Exception {
+        printClassPath(logger, getClass().getClassLoader());
         checkStartParams(logger, port, appRootDir);
         Log.setLog(new JettyTreeLogger(logger));
         LeakPreventor.jreLeakPrevention(logger);
@@ -267,6 +269,14 @@ public class JettyLauncher extends ServletContainerLauncher {
         server.setStopAtShutdown(true);
         Log.setLog(new JettyTreeLogger(logger));
         return new JettyServletContainer(logger, server, wac, connector.getLocalPort(), appRootDir);
+    }
+
+    private void printClassPath(TreeLogger logger, ClassLoader classLoader) {
+        if (classLoader instanceof URLClassLoader) {
+            for (URL url : ((URLClassLoader) classLoader).getURLs()) {
+                logger.log(TreeLogger.WARN, url.toExternalForm());
+            }
+        }
     }
 
     /**
